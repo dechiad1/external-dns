@@ -25,14 +25,14 @@ import (
 	"time"
 
 	"github.com/cloudfoundry-community/go-cfclient"
-	contour "github.com/heptio/contour/apis/generated/clientset/versioned"
+	contour "github.com/projectcontour/contour/apis/generated/clientset/versioned"
 	"github.com/linki/instrumented_http"
 	log "github.com/sirupsen/logrus"
-	istiocontroller "istio.io/istio/pilot/pkg/config/kube/crd/controller"
-	istiomodel "istio.io/istio/pilot/pkg/model"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+
+	versionedclient "istio.io/client-go/pkg/clientset/versioned"
 )
 
 // ErrSourceNotFound is returned when a requested source doesn't exist.
@@ -64,7 +64,7 @@ type Config struct {
 // ClientGenerator provides clients
 type ClientGenerator interface {
 	KubeClient() (kubernetes.Interface, error)
-	IstioClient() (istiomodel.ConfigStore, error)
+	IstioClient() (*versionedclient.Clientset, error)
 	CloudFoundryClient(cfAPPEndpoint string, cfUsername string, cfPassword string) (*cfclient.Client, error)
 	ContourClient() (contour.Interface, error)
 }
@@ -76,7 +76,7 @@ type SingletonClientGenerator struct {
 	KubeMaster     string
 	RequestTimeout time.Duration
 	kubeClient     kubernetes.Interface
-	istioClient    istiomodel.ConfigStore
+	istioClient    *versionedclient.Clientset
 	cfClient       *cfclient.Client
 	contourClient  contour.Interface
 	kubeOnce       sync.Once
@@ -95,10 +95,10 @@ func (p *SingletonClientGenerator) KubeClient() (kubernetes.Interface, error) {
 }
 
 // IstioClient generates an istio client if it was not created before
-func (p *SingletonClientGenerator) IstioClient() (istiomodel.ConfigStore, error) {
+func (p *SingletonClientGenerator) IstioClient() (*versionedclient.Clientset, error) {
 	var err error
 	p.istioOnce.Do(func() {
-		p.istioClient, err = NewIstioClient(p.KubeConfig)
+		p.istioClient, err = NewIstioClient(p.KubeConfig, p.KubeMaster, p.RequestTimeout)
 	})
 	return p.istioClient, err
 }
@@ -197,6 +197,17 @@ func BuildWithConfig(source string, p ClientGenerator, cfg *Config) (Source, err
 			return nil, err
 		}
 		return NewContourIngressRouteSource(kubernetesClient, contourClient, cfg.ContourLoadBalancerService, cfg.Namespace, cfg.AnnotationFilter, cfg.FQDNTemplate, cfg.CombineFQDNAndAnnotation, cfg.IgnoreHostnameAnnotation)
+	case "contour-httpproxy":
+		kubernetesClient, err := p.KubeClient()
+		if err != nil {
+			return nil, err
+		}
+		contourClient, err := p.ContourClient()
+		if err != nil {
+			return nil, err
+		}
+		return NewContourHTTPProxySource(kubernetesClient, contourClient, cfg.ContourLoadBalancerService, cfg.Namespace, cfg.AnnotationFilter, cfg.FQDNTemplate, cfg.CombineFQDNAndAnnotation, cfg.IgnoreHostnameAnnotation, false)
+	
 	case "fake":
 		return NewFakeSource(cfg.FQDNTemplate)
 	case "connector":
@@ -274,26 +285,29 @@ func NewKubeClient(kubeConfig, kubeMaster string, requestTimeout time.Duration) 
 // wrappers) to the client's config at this level. Furthermore, the Istio client
 // constructor does not expose the ability to override the Kubernetes master,
 // so the Master config attribute has no effect.
-func NewIstioClient(kubeConfig string) (*istiocontroller.Client, error) {
+func NewIstioClient(kubeConfig, kubeMaster string, requestTimeout time.Duration) (*versionedclient.Clientset, error) {
 	if kubeConfig == "" {
 		if _, err := os.Stat(clientcmd.RecommendedHomeFile); err == nil {
 			kubeConfig = clientcmd.RecommendedHomeFile
 		}
 	}
 
-	client, err := istiocontroller.NewClient(
-		kubeConfig,
-		"",
-		istiomodel.ConfigDescriptor{istiomodel.Gateway},
-		"",
-	)
+	restConfig, err := clientcmd.BuildConfigFromFlags(kubeMaster, kubeConfig)
 	if err != nil {
+		log.Fatalf("Failed to create k8s rest client: %s", err)
 		return nil, err
 	}
 
+	ic, err := versionedclient.NewForConfig(restConfig)
+	if err != nil {
+		log.Fatalf("Failed to create istio client: %s", err)
+		return nil, err
+	}
+
+	//TODO: need this? ic.Timeout = requestTimeout
 	log.Info("Created Istio client")
 
-	return client, nil
+	return ic, nil
 }
 
 // NewContourClient returns a new Contour client object. It takes a Config and

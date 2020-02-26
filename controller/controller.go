@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -105,6 +106,7 @@ type Controller struct {
 // RunOnce runs a single iteration of a reconciliation loop.
 func (c *Controller) RunOnce(ctx context.Context) error {
 	records, err := c.Registry.Records(ctx)
+	fmt.Printf("acquired %d records from run once\n", len(records))
 	if err != nil {
 		registryErrorsTotal.Inc()
 		deprecatedRegistryErrors.Inc()

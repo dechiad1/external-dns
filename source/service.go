@@ -295,10 +295,13 @@ func (sc *serviceSource) endpointsFromTemplate(svc *v1.Service) ([]*endpoint.End
 func (sc *serviceSource) endpoints(svc *v1.Service) []*endpoint.Endpoint {
 	var endpoints []*endpoint.Endpoint
 	// Skip endpoints if we do not want entries from annotations
+
 	if !sc.ignoreHostnameAnnotation {
 		providerSpecific, setIdentifier := getProviderSpecificAnnotations(svc.Annotations)
 		hostnameList := getHostnamesFromAnnotations(svc.Annotations)
+		//log.Debugf("any hostnames? %v", hostnameList)
 		for _, hostname := range hostnameList {
+			log.Debugf("do we log this hostname: %s", hostname)
 			endpoints = append(endpoints, sc.generateEndpoints(svc, hostname, providerSpecific, setIdentifier)...)
 		}
 	}
@@ -443,6 +446,7 @@ func extractLoadBalancerTargets(svc *v1.Service) endpoint.Targets {
 	// Create a corresponding endpoint for each configured external entrypoint.
 	for _, lb := range svc.Status.LoadBalancer.Ingress {
 		if lb.IP != "" {
+			log.Debugf("service of type loadbalancer for service %s", svc.Name)
 			targets = append(targets, lb.IP)
 		}
 		if lb.Hostname != "" {

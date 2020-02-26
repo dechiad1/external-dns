@@ -103,6 +103,7 @@ func (r rfc2136Provider) Records(ctx context.Context) ([]*endpoint.Endpoint, err
 
 	var eps []*endpoint.Endpoint
 
+	fmt.Printf("length of records from list %d\n", len(rrs))
 OuterLoop:
 	for _, rr := range rrs {
 		log.Debugf("Record=%s", rr)
@@ -129,6 +130,7 @@ OuterLoop:
 			rrValues = (rr.(*dns.TXT).Txt)
 			rrType = "TXT"
 		default:
+			fmt.Printf("unhandled record: %v \n", rr)
 			continue // Unhandled record type
 		}
 
@@ -233,6 +235,7 @@ func (r rfc2136Provider) ApplyChanges(ctx context.Context, changes *plan.Changes
 
 	// only send if there are records available
 	if len(m.Ns) > 0 {
+		//DEBUG: fmt.Println(m)
 		err := r.actions.SendMessage(m)
 		if err != nil {
 			return fmt.Errorf("RFC2136 update failed: %v", err)

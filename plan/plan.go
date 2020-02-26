@@ -112,6 +112,7 @@ func (p *Plan) Calculate() *Plan {
 	t := newPlanTable()
 
 	for _, current := range filterRecordsForPlan(p.Current) {
+		fmt.Printf("Current: dnsname: %s & record type: %s", current.DNSName, current.RecordType)
 		t.addCurrent(current)
 	}
 	for _, desired := range filterRecordsForPlan(p.Desired) {
@@ -228,6 +229,7 @@ func shouldUpdateProviderSpecific(desired, current *endpoint.Endpoint) bool {
 // only record with this property. The behavior of the planner may need to be
 // made more sophisticated to codify this.
 func filterRecordsForPlan(records []*endpoint.Endpoint) []*endpoint.Endpoint {
+	fmt.Printf("filtering %d records \n", len(records))
 	filtered := []*endpoint.Endpoint{}
 
 	for _, record := range records {
